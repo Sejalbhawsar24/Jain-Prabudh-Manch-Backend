@@ -4,7 +4,7 @@ const { uploadGranth, getAllGranths } = require("../controller/jainGranthControl
 
 const router = express.Router();
 
-router.post("/upload", upload.single("file"), uploadGranth); // Upload Granth
+router.post("/upload", upload.jainGranthUpload, uploadGranth); // Upload Granth
 router.get("/all", getAllGranths); // Get All Granths
 
 module.exports = router;

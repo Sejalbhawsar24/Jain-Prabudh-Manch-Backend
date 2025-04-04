@@ -4,7 +4,7 @@ const router = express.Router();
 const govtYojanaController = require('../controller/govtYojanaController')
 
 //  API Routes
-router.post("/create", upload.single("image"), govtYojanaController.createYojana);
+router.post("/create", upload.govtYojanaUpload, govtYojanaController.createYojana);
 router.get("/all", govtYojanaController.getAllYojanas);
 router.delete("/delete/:id", govtYojanaController.deleteYojana);
 

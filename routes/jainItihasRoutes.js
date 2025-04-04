@@ -4,7 +4,7 @@ const { createJainItihas, getAllJainItihas, updateJainItihas, deleteJainItihas, 
 const upload = require("../middlewares/upload");
 
 
-router.post("/create", upload.single("image"), createJainItihas);
+router.post("/create", upload.jaintihasUpload, createJainItihas);
 router.get("/getAll", getAllJainItihas);
 router.put("/update/:id", upload.single("image"), updateJainItihas);
 router.delete("/delete/:id", deleteJainItihas);

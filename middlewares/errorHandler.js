@@ -1,5 +1,5 @@
 // not found 
-const { stack } = require("../routes/authRoute");
+const { stack } = require("../routes/UserRegistrationRoutes/authRoute");
 
 const notFound = (req, res, next) => {
     const error = new Error(`Not Found : ${req.originalUrl}`);

@@ -1,13 +1,23 @@
 // controllers/rojgarController.js
 const Rojgar = require("../model/RojgarModel");
 const RojgarRecruitee = require("../model/RojgarRecruiteeModel")
+
 // Create a new job
 exports.createJob = async (req, res) => {
   try {
-    const { user, jainAadhar, jobName, jobDescription, experience, salary, age,language, gender,location, jobContact, jobEmail} = req.body;
-    const jobPost = req.file ? `uploads/${req.file.filename}` : null;
+    const { user, jainAadhar, jobName, jobDescription, experience, salary, age, language, gender, location, jobContact, jobEmail } = req.body;
 
-    console.log("Job Post Path:", jobPost)
+    // Extract jobPost files from req.files
+    let jobPost = [];
+    if (req.files && req.files.jobPost) {
+      jobPost = req.files.jobPost.map((file) => ({
+        url: file.location,
+        type: file.mimetype.startsWith("video/") ? "video" : "image",
+      }));
+    }
+
+    console.log("Job Post Data:", jobPost);
+
     const newJob = new Rojgar({
       user,
       jainAadhar,
@@ -23,6 +33,7 @@ exports.createJob = async (req, res) => {
       jobEmail,
       jobPost,
     });
+
     const savedJob = await newJob.save();
     res.status(201).json(savedJob);
   } catch (error) {
@@ -31,9 +42,9 @@ exports.createJob = async (req, res) => {
 };
 exports.createRecruitee = async (req, res) => {
   try {
-    const resume = req.file ? `uploads/${req.file.filename}` : null;
     const { candidateName, mobile, email, address, gender, user } = req.body;
-
+    const candidateResume = req.files?.candidateResume?.[0]?.location || "";
+    //console.log(" Candidate Resume URL:", candidateResume); // Debugging
     const newRecruitee = new RojgarRecruitee({
       candidateName,
       mobile,
@@ -42,18 +53,16 @@ exports.createRecruitee = async (req, res) => {
       gender,
       user,
       jobType: "recruitee",
-      resume,
+      candidateResume,
     });
-
     await newRecruitee.save();
     res.status(201).json({ message: "Recruitee created successfully!", newRecruitee });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Error creating recruitee:", error);
     res.status(500).json({ message: "Error creating recruitee", error: error.message });
   }
 };
 
-  
 // Get all jobs
 exports.getAllJobs = async (req, res) => {
   try {

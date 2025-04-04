@@ -7,8 +7,8 @@ const rojgarSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    jobType:{
-      type:String,
+    jobType: {
+      type: String,
     },
     jainAadhar: {
       type: String,
@@ -29,11 +29,11 @@ const rojgarSchema = new mongoose.Schema(
       type: String,
     },
     gender: {
-        type: String,
-      },
+      type: String,
+    },
     language: {
-        type: String,
-      },
+      type: String,
+    },
     location: {
       type: String,
     },
@@ -44,9 +44,18 @@ const rojgarSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    jobPost:{
-      type:String,
-    },
+    jobPost: [
+      {
+        url: {
+          type: String,
+          required: true,
+        },
+        type: {
+          type: String,
+          enum: ["image", "video"],
+        },
+      },
+    ],
   },
   { timestamps: true }
 );

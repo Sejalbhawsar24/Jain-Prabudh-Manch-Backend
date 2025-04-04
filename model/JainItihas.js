@@ -15,9 +15,6 @@ const JainItihasSchema = new mongoose.Schema(
     image: {
       type: String,
     },
-    imageUrl: {
-      type:String
-    },
     likePost: [
       {
         type: mongoose.Schema.Types.ObjectId,

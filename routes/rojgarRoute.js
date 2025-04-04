@@ -5,8 +5,8 @@ const router = express.Router();
 const upload = require("../middlewares/upload");
 
 // Routes for job operations
-router.post("/create", upload.single("jobPost"), createJob);
-router.post("/candidate", upload.single("resume"), createRecruitee);
+router.post("/create", upload.jobPostUpload, createJob);
+router.post("/candidate", upload.candidateResumeUpload, createRecruitee);
 router.get("/", getAllJobs);
 router.get("/:id", getJobById);
 router.put("/:id", updateJob);

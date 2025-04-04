@@ -2,11 +2,11 @@ const mongoose = require('mongoose');
 
 const RojgarRecruiteeSchema = new mongoose.Schema(
   {
-     user: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     jobType: {
       type: String,
       default: 'recruitee',
@@ -26,7 +26,7 @@ const RojgarRecruiteeSchema = new mongoose.Schema(
     gender: {
       type: String,
     },
-    resume: {
+    candidateResume:{
       type: String,
     },
   },

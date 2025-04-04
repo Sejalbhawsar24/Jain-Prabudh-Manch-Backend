@@ -1,32 +1,42 @@
 const JainItihas = require("../model/JainItihas");
 
-// Create a new Jain Itihas entry
 exports.createJainItihas = async (req, res) => {
   try {
-    console.log("Uploaded File:", req.file);
+    console.log("🟢 Request Body:", req.body);
+    console.log("🟢 Uploaded File:", req.file);
+
     const { title, caption, userId } = req.body;
-    const image = req.file ? req.file.filename : null; 
+    
+    if (!userId) {
+      return res.status(400).json({ error: "User ID is required!" });
+    }
+
+    const image = req.file?.location || ""; // Fetch S3 URL
+
     const newEntry = new JainItihas({ title, caption, image, userId });
+
     await newEntry.save();
     res.status(201).json({ 
       message: "Entry created successfully", 
-      data: {
-        ...newEntry._doc, 
-        imageUrl: `http://10.0.2.2:4000/uploads/${image}`
-      } 
+      newEntry,
     });
   } catch (error) {
+    console.error("❌ Error creating Jain Itihas entry:", error);
     res.status(500).json({ error: error.message });
   }
 };
 
 
-// Get all Jain Itihas entries
+
 exports.getAllJainItihas = async (req, res) => {
   try {
-    const entries = await JainItihas.find().populate("userId", "fullName profilePicture");
+    const entries = await JainItihas.find().populate("userId", "firstName lastName profilePicture");
+
+    console.log("✅ Populated Data:", JSON.stringify(entries, null, 2)); // Debug output
+
     res.status(200).json(entries);
   } catch (error) {
+    console.error("❌ Error fetching JainItihas:", error);
     res.status(500).json({ error: error.message });
   }
 };

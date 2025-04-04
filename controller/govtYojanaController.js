@@ -3,7 +3,7 @@ const GovtYojana = require("../model/govtYojanaModel");
 exports.createYojana = async (req, res) => {
     try {
       const { yojanaName, userId } = req.body;
-      const image = req.file ? `uploads/${req.file.filename}` : null;
+      const image = req.file ? req.file.location : null;
       if (!yojanaName || !image || !userId) {
         return res.status(400).json({ message: "Name, Image, and User ID are required" });
       }
