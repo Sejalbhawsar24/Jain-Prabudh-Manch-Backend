@@ -196,7 +196,14 @@ groupChatSchema.methods.muteMember = async function(userId, duration) {
     await this.save();
   }
 };
-
+// Add this to your GroupMessage schema
+groupMessageSchema.set('toJSON', {
+  getters: false, // This will prevent automatic decryption when converting to JSON
+  transform: function(doc, ret) {
+    // Keep the encrypted form
+    return ret;
+  }
+});
 // Add method to delete message attachments
 groupMessageSchema.methods.deleteAttachments = async function() {
   if (this.attachments && this.attachments.length > 0) {

@@ -267,6 +267,8 @@ exports.sendGroupMessage = async (req, res) => {
     await group.save();
     // Get the last message (the one we just added)
     const sentMessage = group.groupMessages[group.groupMessages.length - 1];
+    const plainSent = sentMessage.toObject();
+    plainSent.message = decrypt(plainSent.message);
     const senderInfo = group.groupMembers.find(
       member => member.user._id.toString() === sender.toString()
     );
@@ -300,7 +302,7 @@ exports.sendGroupMessage = async (req, res) => {
       console.error('Socket.io instance not available');
     }
     return successResponse(res, {
-      ...sentMessage.toObject(),
+      ...plainSent,
       sender: {
         _id: senderInfo.user._id,
         fullName: `${senderInfo.user.firstName} ${senderInfo.user.lastName}`,
@@ -352,19 +354,10 @@ exports.getGroupMessages = async (req, res) => {
     if (!isMember) {
       return errorResponse(res, "Not authorized to view messages", 403);
     }
-
-    // ✅ **Manually decrypt each message**
-    const decryptedMessages = group.groupMessages.map(msg => ({
-      ...msg.toObject(),
-      message: decrypt(msg.message) // ✅ **Decrypt message before sending**
-    }));
-
-    // ✅ **Mark messages as read**
-    decryptedMessages.forEach(msg => {
-      if (!msg.readBy.some(read => read.user.toString() === userId.toString())) {
-        msg.readBy.push({ user: userId, readAt: new Date() });
-      }
-    });
+    const decryptedMessages = group.groupMessages.map(msg =>
+      msg.toObject({ getters: true }) // this will auto-decrypt
+    );
+    
 
     await group.save();
 

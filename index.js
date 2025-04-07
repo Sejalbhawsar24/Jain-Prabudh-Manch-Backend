@@ -72,7 +72,9 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
-
+app.get('/', (req, res) => {
+  res.send('Hello World!');
+});
 // Routes
 app.use("/api/user",authRouter)
 // Protected routes (require authentication)

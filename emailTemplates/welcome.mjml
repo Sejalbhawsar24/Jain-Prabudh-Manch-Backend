@@ -1,0 +1,12 @@
+<mjml>
+  <mj-body>
+    <mj-section>
+      <mj-column>
+        <mj-text font-size="22px" font-weight="bold">Namaste {{name}},</mj-text>
+        <mj-text>Welcome to Jain Prabhutmanch 🎉</mj-text>
+        <mj-text>We’re happy to have you onboard. You can now explore stories, posts, sanghs, and more!</mj-text>
+        <mj-button href="https://jainprabhutmanch.in" background-color="#28a745">Explore Now</mj-button>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

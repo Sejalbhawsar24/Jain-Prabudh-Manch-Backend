@@ -1,3 +1,4 @@
+
 const express = require('express');
 const { 
     registerUser, 
@@ -9,12 +10,17 @@ const {
     uploadProfilePicture,
     skipProfilePicture,
     logoutUser,
-    searchUsers
+    searchUsers,
+    verifyEmail,
+    resendVerificationCode,
+    requestPasswordReset,
+    resetPassword
 } = require('../../controller/UserRegistrationControllers/userController');
 const { authMiddleware, checkAccess } = require('../../middlewares/authMiddlewares');
 const upload = require('../../middlewares/upload');
 const { check, param, body } = require('express-validator');
 const rateLimit = require('express-rate-limit');
+
 
 const router = express.Router();
 
@@ -48,6 +54,12 @@ router.post('/register',
     ],
     registerUser
 );
+router.post('/verify-email', verifyEmail);
+router.post('/resend-code', resendVerificationCode);
+
+// Password reset
+router.post('/request-password-reset', requestPasswordReset);
+router.post('/reset-password', resetPassword);
 router.post('/login',loginUser);
 router.use(authMiddleware);
 router.post('/logout', logoutUser);

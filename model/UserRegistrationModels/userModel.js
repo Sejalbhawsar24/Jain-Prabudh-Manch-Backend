@@ -18,6 +18,31 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    email: {
+      type: String,
+      required: [true, 'Email is required'],
+      unique: true,
+      trim: true,
+      lowercase: true,
+      validate: {
+        validator: function(v) {
+          return validator.isEmail(v);
+        },
+        message: props => `${props.value} is not a valid email address!`
+      }
+    },
+    isEmailVerified: {
+      type: Boolean,
+      default: false
+    },
+    verificationCode: {
+      code: String,
+      expiresAt: Date
+    },
+    resetPasswordCode: {
+      code: String,
+      expiresAt: Date
+    },
     birthDate: {
       type: Date,
       required: [true, 'Birth date is required'],

@@ -202,7 +202,7 @@ const createJainAadhar = asyncHandler(async (req, res) => {
 const getApplicationStatus = asyncHandler(async (req, res) => {
   try {
     const application = await JainAadhar.findOne({ userId: req.user._id })
-      .select('-PanCard -AadharCard');
+      .select('-AadharCard');
 
     if (!application) {
       return errorResponse(res, 'No Jain Aadhar application found', 404);

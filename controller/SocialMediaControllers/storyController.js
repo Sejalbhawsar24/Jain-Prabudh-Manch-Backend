@@ -95,7 +95,7 @@ const getStoriesByUser = asyncHandler(async (req, res) => {
             userId,
             createdAt: { $gte: twentyFourHoursAgo }
         }).populate("userId", "profilePicture firstName lastName");
-
+        console.log("Fetched Stories:", stories);
         if (!stories.length) {
             return res.status(404).json({
                 success: false,

@@ -88,7 +88,6 @@ const jainAadharSchema = new mongoose.Schema(
       email: { type: String },
     },
     qrCode: { type: String },
-    PanCard: { type: String },
     AadharCard: { type: String },
     userProfile: { type: String },
     status: {

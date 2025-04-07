@@ -1,3 +1,4 @@
+
 const User = require("../../model/UserRegistrationModels/userModel");
 const asyncHandler = require("express-async-handler");
 const { body, validationResult } = require('express-validator');
@@ -7,12 +8,17 @@ dotenv.config();
 const { userValidation } = require('../../validators/validations');
 const { errorResponse, successResponse } = require("../../utils/apiResponse");
 const { generateToken } = require("../../helpers/authHelpers");
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../../services/nodemailerEmailService');
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 5, 
     message: { error: 'Too many login attempts. Please try again later.' }
 });
+// Generate a random 6-digit code
+const generateVerificationCode = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 // Register new user with enhanced security
 const registerUser = [
@@ -20,17 +26,45 @@ const registerUser = [
     asyncHandler(async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ 
-                success: false,
-                errors: errors.array()
-            });
+            return errorResponse(
+                res, 
+                'Validation failed', 
+                400, 
+                errors.array().map(err => ({ field: err.param, message: err.msg }))
+            );
         }
-        const { firstName, lastName, phoneNumber, password, birthDate, gender, city } = req.body;
+        const {
+            firstName,
+            lastName,
+            email,
+            phoneNumber,
+            password,
+            birthDate,
+            gender,
+            city,
+        } = req.body;
         // Check if user already exists
         const existingUser = await User.findOne({ phoneNumber });
-        // if (existingUser) {
-        //     return errorResponse(res, 'User with this phone number already exists', 400);
-        // }
+        if (existingUser) {
+            return errorResponse(res, 'User with this phone number already exists', 400);
+        }
+        
+        const existingUserByEmail = await User.findOne({ email });
+
+        if (existingUserByEmail) {
+            if (existingUserByEmail.isEmailVerified) {
+                return errorResponse(res, 'User with this email already exists', 400);
+            }
+
+            // 💡 Delete old unverified user to allow clean re-registration
+            await User.deleteOne({ _id: existingUserByEmail._id });
+        }
+
+
+        // Generate verification code
+        const verificationCode = generateVerificationCode();
+        const codeExpiry = new Date();
+        codeExpiry.setMinutes(codeExpiry.getMinutes() + 30); 
         // Enhanced name formatting
         const fullName = lastName.toLowerCase() === 'jain' 
             ? `${firstName} Jain`
@@ -41,66 +75,279 @@ const registerUser = [
             lastName,
             fullName,
             phoneNumber,
+            email,
             password,
             birthDate,
             gender,
             city,
+            verificationCode: {
+                code: verificationCode,
+                expiresAt: codeExpiry
+            },
             lastLogin: new Date(),
             accountStatus: 'active',
             registrationStep: 'initial' // Track registration progress
         });
-        const token = generateToken(newUser);
-        newUser.token = token;
+            // Send verification email
+            try {
+                await sendVerificationEmail(email, firstName, verificationCode);
+    
+    
+            } catch (error) {
+                // Don't fail registration if email fails, but log the error
+                console.error('Error sending verification email:', error);
+            }    
+        // const token = generateToken(newUser);
+        // newUser.token = token;
         await newUser.save();
         const userResponse = newUser.toObject();
         delete userResponse.password;
         delete userResponse.__v;
+        delete userResponse.verificationCode;
         return successResponse(
             res, 
             {
                 user: userResponse,
-                token,
-                nextStep: 'profile_picture' 
+                verificationCode: newUser.verificationCode,
+                nextStep: 'verify_email' 
             },
-            'User registered successfully',
+            'User registered successfully. Please verify your email.',
             201
         );
     })
 ];
+// Verify email with verification code
+const verifyEmail = asyncHandler(async (req, res) => {
+    const { email, code } = req.body;
 
-const loginUser = asyncHandler(async (req, res) => {
-    const { fullName, password } = req.body;
+    if (!email || !code) {
+        return errorResponse(res, 'Email and verification code are required', 400);
+    }
 
-    // Name ko split karna (multiple spaces handle hoga)
-    const nameParts = fullName.trim().split(/\s+/);
-    const firstName = nameParts.shift();
-    const lastName = nameParts.join(' '); // Baaki sab lastName me
+    const user = await User.findOne({ email });
 
-    // Database me firstName aur lastName se user find karna
-    const user = await User.findOne({ firstName, lastName });
+    if (!user) {
+        return errorResponse(res, 'User not found', 404);
+    }
 
-    if (user && (await user.isPasswordMatched(password))) {
+    if (user.isEmailVerified) {
+        return errorResponse(res, 'Email is already verified', 400);
+    }
+
+    if (!user.verificationCode || !user.verificationCode.code) {
+        return errorResponse(res, 'Verification code not found. Please request a new one.', 400);
+    }
+
+    if (new Date() > user.verificationCode.expiresAt) {
+        return errorResponse(res, 'Verification code has expired. Please request a new one.', 400);
+    }
+
+    if (user.verificationCode.code !== code) {
+        return errorResponse(res, 'Invalid verification code', 400);
+    }
+
+    // Mark email as verified and clear verification code
+    user.isEmailVerified = true;
+    user.verificationCode = undefined;
+    user.registrationStep = 'initial';
+
+    const token = generateToken(user);
+    console.log(token)
+    user.token = token;
+    await user.save();
+
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    delete userResponse.__v;
+
+    return successResponse(
+        res,
+        {
+            user: userResponse,
+            token,
+            nextStep: 'Profile Picture'
+        },
+        'Email verified successfully',
+        200
+    );
+});
+
+// Resend verification code
+const resendVerificationCode = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return errorResponse(res, 'Email is required', 400);
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+        return errorResponse(res, 'User not found', 404);
+    }
+
+    if (user.isEmailVerified) {
+        return errorResponse(res, 'Email is already verified', 400);
+    }
+
+    // Generate new verification code
+    const verificationCode = generateVerificationCode();
+    const codeExpiry = new Date();
+    codeExpiry.setMinutes(codeExpiry.getMinutes() + 30); // Code expires in 30 minutes
+
+    user.verificationCode = {
+        code: verificationCode,
+        expiresAt: codeExpiry
+    };
+    await user.save();
+
+    // Send verification email
+    try {
+        await sendVerificationEmail(email, user.firstName, verificationCode);
+    } catch (error) {
+        return errorResponse(res, 'Failed to send verification email', 500);
+    }
+
+    return successResponse(
+        res,
+        {},
+        'Verification code resent successfully',
+        200
+    );
+});
+
+// Request password reset
+const requestPasswordReset = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return errorResponse(res, 'Email is required', 400);
+    }
+
+    const user = await User.findOne({ email });
+
+    // Security-friendly response
+    if (!user) {
+        return successResponse(res, {}, 'If your email is registered, you will receive a password reset code');
+    }
+
+    // ✅ Add this check
+    if (!user.isEmailVerified) {
+        return errorResponse(res, 'Please verify your email before resetting your password', 403);
+    }
+
+    // Continue generating code
+    const resetCode = generateVerificationCode();
+    const codeExpiry = new Date();
+    codeExpiry.setMinutes(codeExpiry.getMinutes() + 30);
+
+    user.resetPasswordCode = {
+        code: resetCode,
+        expiresAt: codeExpiry
+    };
+    await user.save();
+
+    try {
+        await sendPasswordResetEmail(email, user.firstName, resetCode);
+    } catch (error) {
+        console.error('Error sending password reset email:', error);
+        return errorResponse(res, 'Failed to send password reset email', 500);
+    }
+
+    return successResponse(res, {}, 'Password reset code has been sent to your email');
+});
+
+
+// Verify reset code and reset password
+const resetPassword = asyncHandler(async (req, res) => {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+        return errorResponse(res, 'Email, reset code, and new password are required', 400);
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+        return errorResponse(res, 'User not found', 404);
+    }
+
+    if (!user.resetPasswordCode || !user.resetPasswordCode.code) {
+        return errorResponse(res, 'Reset code not found. Please request a new one.', 400);
+    }
+
+    if (new Date() > user.resetPasswordCode.expiresAt) {
+        return errorResponse(res, 'Reset code has expired. Please request a new one.', 400);
+    }
+
+    if (user.resetPasswordCode.code !== code) {
+        return errorResponse(res, 'Invalid reset code', 400);
+    }
+
+    // Update password and clear reset code
+    user.password = newPassword;
+    user.resetPasswordCode = undefined;
+    await user.save();
+
+    return successResponse(
+        res,
+        {},
+        'Password has been reset successfully',
+        200
+    );
+});
+
+const loginUser = [
+    authLimiter,
+    userValidation.login,
+    asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+            const user = await User.findOne({ email });
+
+            if (!user || !(await user.isPasswordMatched(password))) {
+                return errorResponse(res, "Invalid email or password", 401);
+            }
+
+            if (!user.isEmailVerified) {
+                return errorResponse(res, "Please verify your email before logging in", 401, {
+                    requiresEmailVerification: true
+                });
+            }
+        // Generate tokens
         const token = generateToken(user);
         user.token = token;
         user.lastLogin = new Date();
         await user.save();
 
-        res.json({
-            success: true,
-            _id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            fullName: `${user.firstName} ${user.lastName}`,
-            token: token
-        });
-    } else {
-        res.status(401).json({
-            success: false,
-            message: "Invalid full name or password"
-        });
-    }
-});
+        const userResponse = user.toObject();
+        delete userResponse.password;
+        delete userResponse.__v;
 
+          // Prepare role information for the response
+          const roleInfo = {
+            hasSanghRoles: user.sanghRoles && user.sanghRoles.length > 0,
+            hasPanchRoles: user.panchRoles && user.panchRoles.length > 0,
+            hasTirthRoles: user.tirthRoles && user.tirthRoles.length > 0,
+            hasVyaparRoles: user.vyaparRoles && user.vyaparRoles.length > 0
+        };
+
+        return successResponse(
+            res,
+            {
+                user: userResponse,
+                token: token,
+                roles: roleInfo
+            },
+            "Login successful",
+            200
+        );
+    } catch (error) {
+        return errorResponse(res, "Login failed", 500, error.message);
+    }
+})
+];
 // Enhanced user search with pagination and filters
 const getAllUsers = asyncHandler(async (req, res) => {
     const { search, page = 1, limit = 10, city, gender, role } = req.query;
@@ -530,5 +777,9 @@ module.exports = {
     uploadProfilePicture,
     skipProfilePicture,
     logoutUser,
-    searchUsers
+    searchUsers,
+    verifyEmail,
+    resendVerificationCode,
+    requestPasswordReset,
+    resetPassword
 };
