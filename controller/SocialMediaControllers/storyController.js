@@ -1,6 +1,7 @@
 const Story = require('../../model/SocialMediaModels/storyModel');
 const User = require('../../model/UserRegistrationModels/userModel');
 const asyncHandler = require("express-async-handler");
+const { successResponse, errorResponse } = require('../../utils/apiResponse');
 
 // Create Story
 const createStory = asyncHandler(async (req, res) => {
@@ -30,7 +31,7 @@ const createStory = asyncHandler(async (req, res) => {
             existingStory.media.push(...mediaFiles);
             await existingStory.save();
         } else {
-            // ➕ Create a new story
+            //  Create a new story
             existingStory = await Story.create({
                 userId,
                 media: mediaFiles,
@@ -95,29 +96,17 @@ const getStoriesByUser = asyncHandler(async (req, res) => {
             userId,
             createdAt: { $gte: twentyFourHoursAgo }
         }).populate("userId", "profilePicture firstName lastName");
-        console.log("Fetched Stories:", stories);
+
         if (!stories.length) {
-            return res.status(404).json({
-                success: false,
-                message: 'No active stories found for this user'
-            });
+            return errorResponse(res, 'No active stories found for this user', 404);
         }
 
-        res.json({
-            success: true,
-            count: stories.length,
-            data: stories
-        });
+        return successResponse(res, stories, "Stories fetched successfully", 200);
     } catch (error) {
         console.error('Error fetching user stories:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error fetching user stories',
-            error: error.message
-        });
+        return errorResponse(res, 'Error fetching user stories', 500, error.message);
     }
 });
-
 // Delete Story
 const deleteStory = asyncHandler(async (req, res) => {
     try {
@@ -160,12 +149,16 @@ const deleteStory = asyncHandler(async (req, res) => {
 // delete story on media
 const deleteStoryMedia = asyncHandler(async (req, res) => {
     try {
-        const { userId, storyId, mediaUrl } = req.params;
+        const { storyId } = req.params;
+        const userId = req.user._id;
+        const { mediaUrl } = req.body; 
 
+        const normalizedMediaUrl = decodeURIComponent(mediaUrl).trim();
+        console.log("Received URL:", normalizedMediaUrl);
         // Verify story ownership
         const story = await Story.findOne({
             _id: storyId,
-            userId: req.user._id // Ensure authenticated user owns the story
+            userId: userId // Ensure authenticated user owns the story
         });
 
         if (!story) {
@@ -176,7 +169,9 @@ const deleteStoryMedia = asyncHandler(async (req, res) => {
         }
 
         // Filter out the media URL that needs to be deleted
-        const updatedMedia = story.media.filter(url => url !== mediaUrl);
+        const updatedMedia = story.media.filter(url => url.trim() !== normalizedMediaUrl);
+        console.log("Updated media:", updatedMedia);
+
 
         if (updatedMedia.length === 0) {
             // If no media left, delete entire story document
@@ -195,6 +190,7 @@ const deleteStoryMedia = asyncHandler(async (req, res) => {
 
         // Update media array if some media items remain
         story.media = updatedMedia;
+        story.markModified('media');
         await story.save();
 
         res.json({

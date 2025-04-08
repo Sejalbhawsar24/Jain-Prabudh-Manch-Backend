@@ -159,7 +159,25 @@ exports.getAllMessages = async (req, res) => {
     res.status(500).json({ message: 'Error fetching messages', error });
   }
 };
+exports.getConversations = async (req, res) => {
+  try {
+    const userId = req.params.userId;
 
+    const conversations = await Conversation.find({
+      participants: userId
+    })
+      .populate('participants', 'fullName profilePicture')
+      .sort({ updatedAt: -1 });
+
+    if (!conversations || conversations.length === 0) {
+      return errorResponse(res, 'No conversations found', 404);
+    }
+
+    return successResponse(res, conversations, 'Conversations retrieved', 200);
+  } catch (error) {
+    return errorResponse(res, 'Error fetching conversations', 500, error);
+  }
+};
 // Get messages by ID (either sender or receiver)
 exports.getMessageById = async (req, res) => {
   try {

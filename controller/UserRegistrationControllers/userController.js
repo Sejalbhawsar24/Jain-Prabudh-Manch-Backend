@@ -350,8 +350,7 @@ const loginUser = [
 ];
 // Enhanced user search with pagination and filters
 const getAllUsers = asyncHandler(async (req, res) => {
-    const { search, page = 1, limit = 10, city, gender, role } = req.query;
-    const skip = (page - 1) * limit;
+    const { search,city, gender, role } = req.query;
 
     let query = {};
     
@@ -378,16 +377,12 @@ const getAllUsers = asyncHandler(async (req, res) => {
 
     const users = await User.find(query)
         .select('-password -__v')
-        .skip(skip)
-        .limit(parseInt(limit))
         .sort({ createdAt: -1 });
 
     const total = await User.countDocuments(query);
 
     res.json({
         users: users || [],
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / limit),
         totalUsers: total
     });
 });

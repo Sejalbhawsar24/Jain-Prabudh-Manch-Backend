@@ -81,7 +81,7 @@ app.use("/api/user",authRouter)
 app.use("/api/JainAadhar", authMiddleware, jainAdharRouter);
 app.use("/api/friendship", authMiddleware, friendshipRoutes);
 app.use('/api/posts', authMiddleware, postRoutes);
-app.use('/api/stories', authMiddleware, storyRoutes);
+app.use('/api/stories', storyRoutes);
 app.use('/api/notification', authMiddleware, notificationRoutes);
 app.use('/api/messages', authMiddleware, messageRoutes);
 app.use('/api/group', authMiddleware, groupChatRoutes);
