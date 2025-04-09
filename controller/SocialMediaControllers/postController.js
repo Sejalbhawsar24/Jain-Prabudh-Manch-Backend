@@ -11,7 +11,7 @@ const PanchPost = require('../../model/SanghModels/panchPostModel');
 const VyaparPost = require('../../model/VyaparModels/vyaparPostModel');
 const TirthPost = require('../../model/TirthModels/tirthPostModel');
 const SadhuPost = require('../../model/SadhuModels/sadhuPostModel');
-const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
+//const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
 
 // Create a post
 // const createPost = asyncHandler(async (req, res) => {
@@ -75,14 +75,9 @@ const getPostsByUser = asyncHandler(async (req, res) => {
   if (!userId) {
     return res.status(400).json({ error: 'User ID is required' });
   }
-  const cacheKey = `userPosts:${userId}:page:${page}:limit:${limit}`;
-  const posts = await getOrSetCache(cacheKey, async () => {
-    return await Post.find({ user: userId })
-      .populate('user', 'firstName lastName profilePicture')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-  }, 1800);
+  const posts = await Post.find({ user: userId })
+    .populate('user', 'firstName lastName profilePicture')
+    .sort({ createdAt: -1 });
   if (!posts || posts.length === 0) {
     return res.status(404).json({ error: 'No posts found for this user' });
   }

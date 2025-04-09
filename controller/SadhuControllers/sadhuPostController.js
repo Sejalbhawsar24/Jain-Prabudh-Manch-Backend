@@ -2,15 +2,15 @@ const SadhuPost = require('../../model/SadhuModels/sadhuPostModel');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
-const { convertS3UrlToCDN } = require('../../utils/s3Utils');
-const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
+//const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+//const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
 
 
 // Create post
 const createSadhuPost = async (req, res) => {
     try {
-        // console.log("Sadhu Object:", req.sadhu);
-        // console.log("User Object:", req.user);        
+        console.log("Sadhu Object:", req.sadhu);
+        console.log("User Object:", req.user);        
         const { caption } = req.body;
         
         const postData = {
@@ -46,7 +46,7 @@ const createSadhuPost = async (req, res) => {
         await post.save();
 
         await post.populate('postedByUserId', 'firstName lastName profilePicture');
-        await invalidateCache(`sadhuPosts:${req.sadhu._id}:page:1:limit:10`);
+
         return successResponse(res, {
             message: 'Post created successfully',
             post
@@ -85,46 +85,26 @@ const createSadhuPost = async (req, res) => {
 // Get all sadhu posts (public)
 const getAllSadhuPosts = async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
+        const { page = 1, limit = 10 } = req.query;
+        
+        const posts = await SadhuPost.find({ isHidden: false }) // 🔹 Filter remove kiya
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .populate('sadhuId', 'sadhuName uploadImage')
+            .populate('postedByUserId', 'firstName lastName profilePicture')
+            .populate('comments.user', 'firstName lastName profilePicture');
 
-        const cacheKey = `allSadhuPosts:page:${page}:limit:${limit}`;
+        const total = await SadhuPost.countDocuments({ isHidden: false });
 
-        const result = await getOrSetCache(cacheKey, async () => {
-            const posts = await SadhuPost.find({ isHidden: false })
-                .populate('sadhuId', 'sadhuName uploadImage')
-                .populate('postedByUserId', 'firstName lastName profilePicture')
-                .populate('comments.user', 'firstName lastName profilePicture')
-                .sort('-createdAt')
-                .skip(skip)
-                .limit(limit)
-                .lean();
-
-            const total = await SadhuPost.countDocuments({ isHidden: false });
-
-            return {
-                posts,
-                pagination: {
-                    total,
-                    page,
-                    pages: Math.ceil(total / limit)
-                }
-            };
-        }, 180); // 3-minute cache
-
-        result.posts = result.posts.map(post => ({
-            ...post,
-            media: post.media.map(m => ({
-              ...m,
-              url: convertS3UrlToCDN(m.url)
-            }))
-          }));
-          
-
-        return successResponse(res, result, 'All Sadhu posts fetched');
+        return successResponse(res, {
+            posts,
+            totalPosts: total,
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / limit),
+        });
     } catch (error) {
-        return errorResponse(res, 'Failed to fetch Sadhu posts', 500, error.message);
+        return errorResponse(res, error.message);
     }
 };
 

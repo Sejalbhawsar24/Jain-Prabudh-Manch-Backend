@@ -6,7 +6,7 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
-const { getOrSetCache, invalidateCache,invalidatePattern } = require('../../utils/cache');
+//const { getOrSetCache, invalidateCache,invalidatePattern } = require('../../utils/cache');
 
 // Create a post as Sangh
 const createSanghPost = asyncHandler(async (req, res) => {
