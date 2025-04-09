@@ -2,6 +2,7 @@ const Story = require('../../model/SocialMediaModels/storyModel');
 const User = require('../../model/UserRegistrationModels/userModel');
 const asyncHandler = require("express-async-handler");
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 
 // Create Story
 const createStory = asyncHandler(async (req, res) => {
@@ -9,7 +10,9 @@ const createStory = asyncHandler(async (req, res) => {
         const { type } = req.body;
         const userId = req.user._id; // Get userId from authenticated user
         // Get S3 URLs from uploaded files
-        const mediaFiles = req.files ? req.files.map(file => file.location) : [];
+        const mediaFiles = req.files
+        ? req.files.map(file => convertS3UrlToCDN(file.location))
+        : [];
         if (!type) {
             return res.status(400).json({
                 success: false,
@@ -65,12 +68,13 @@ const createStory = asyncHandler(async (req, res) => {
 const getAllStories = asyncHandler(async (req, res) => {
     try {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        console.log("Current Server Time (UTC):", new Date().toISOString());
+       // console.log("Current Server Time (UTC):", new Date().toISOString());
         // Fetch only stories from the last 24 hours
         const stories = await Story.find({
             createdAt: { $gte: twentyFourHoursAgo }
         }).populate("userId", "profilePicture firstName lastName");
-        console.log("Fetched Stories:", stories);
+      //  console.log("Fetched Stories:", stories);
+      
         res.status(200).json({
             success: true,
             count: stories.length,
@@ -100,8 +104,12 @@ const getStoriesByUser = asyncHandler(async (req, res) => {
         if (!stories.length) {
             return errorResponse(res, 'No active stories found for this user', 404);
         }
-
-        return successResponse(res, stories, "Stories fetched successfully", 200);
+        const cdnStories = stories.map(story => ({
+            ...story.toObject(),
+            media: story.media.map(url => convertS3UrlToCDN(url))
+          }));
+          
+        return successResponse(res, cdnStories, "Stories fetched successfully", 200);
     } catch (error) {
         console.error('Error fetching user stories:', error);
         return errorResponse(res, 'Error fetching user stories', 500, error.message);

@@ -7,7 +7,8 @@ const {
   toggleLikeSanghPost,
   commentOnSanghPost,
   deleteSanghPost,
-  replyToComment
+  replyToComment,
+  updateSanghPost
 } = require('../../controller/SanghControllers/sanghPostController');
 const { authMiddleware } = require('../../middlewares/authMiddlewares');
 const { canPostAsSangh } = require('../../middlewares/sanghPermissions');
@@ -73,6 +74,17 @@ router.delete(
     param('postId').isMongoId().withMessage('Invalid post ID')
   ],
   deleteSanghPost
+);
+// Update a Sangh post
+router.put(
+  '/posts/:postId',
+  upload.fields([{ name: 'media', maxCount: 10 }]),
+  [
+    param('postId').isMongoId().withMessage('Invalid post ID'),
+    body('content').notEmpty().withMessage('Content is required')
+      .isLength({ max: 2000 }).withMessage('Content cannot exceed 2000 characters')
+  ],
+  updateSanghPost
 );
 
 module.exports = router; 

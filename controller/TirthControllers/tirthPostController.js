@@ -2,6 +2,8 @@ const TirthPost = require('../../model/TirthModels/tirthPostModel');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
+const { getOrSetCache, invalidateCache,invalidatePattern } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 
 // Create new Tirth post
 const createPost = async (req, res) => {
@@ -17,7 +19,7 @@ const createPost = async (req, res) => {
             if (req.files.image) {
                 media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
                 })));
             }
             
@@ -25,7 +27,7 @@ const createPost = async (req, res) => {
             if (req.files.video) {
                 media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
                 })));
             }
         }
@@ -104,36 +106,45 @@ const getAllTirthPosts = async (req, res) => {
 
 // Get Tirth posts
 const getTirthPosts = async (req, res) => {
-    try {
-        const { tirthId } = req.params;
-        const { page = 1, limit = 10 } = req.query;
-
-        const posts = await TirthPost.find({
-            tirthId,
-            isHidden: false
-        })
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
+    const { tirthId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+  
+    const cacheKey = `tirthPosts:${tirthId}:page:${page}:limit:${limit}`;
+  
+    const result = await getOrSetCache(cacheKey, async () => {
+      const posts = await TirthPost.find({ tirthId, isHidden: false })
+        .populate('tirthId', 'name location')
         .populate('postedByUserId', 'firstName lastName profilePicture')
-        .populate('comments.user', 'firstName lastName profilePicture');
-
-        const total = await TirthPost.countDocuments({
-            tirthId,
-            isHidden: false
-        });
-
-        return successResponse(res, {
-            posts,
-            totalPosts: total,
-            currentPage: page,
-            totalPages: Math.ceil(total / limit)
-        });
-    } catch (error) {
-        return errorResponse(res, error.message, 500);
-    }
-};
-
+        .sort('-createdAt')
+        .skip(skip)
+        .limit(limit)
+        .lean();
+  
+      const total = await TirthPost.countDocuments({ tirthId, isHidden: false });
+  
+      return {
+        posts,
+        pagination: {
+          total,
+          page,
+          pages: Math.ceil(total / limit)
+        }
+      };
+    }, 180);
+  
+    result.posts = result.posts.map(post => ({
+      ...post,
+      media: post.media.map(m => ({
+        ...m,
+        url: convertS3UrlToCDN(m.url)
+      }))
+    }));
+    
+  
+    return successResponse(res, result, 'Tirth posts fetched successfully');
+  };
 // Get a single Tirth post
 const getPost = async (req, res) => {
     try {
@@ -150,12 +161,19 @@ const getPost = async (req, res) => {
         if (!post) {
             return errorResponse(res, 'Post not found', 404);
         }
+        
+        post.media = post.media.map(m => ({
+            ...m,
+            url: convertS3UrlToCDN(m.url)
+          }));
+          
 
         return successResponse(res, post);
     } catch (error) {
         return errorResponse(res, error.message, 500);
     }
 };
+
 
 // Update post
 const updatePost = async (req, res) => {
@@ -207,13 +225,14 @@ const updatePost = async (req, res) => {
             if (req.files.image) {
                 post.media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
                 })));
             }
             if (req.files.video) {
                 post.media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
+
                 })));
             }
         }
@@ -225,7 +244,7 @@ const updatePost = async (req, res) => {
         await post.populate('postedByUserId', 'firstName lastName profilePicture')
                  .populate('comments.user', 'firstName lastName profilePicture')
                  .populate('comments.replies.user', 'firstName lastName profilePicture');
-
+                 await invalidateCache(`tirthPosts:${req.params.tirthId}:page:1:limit:10`);
         return successResponse(res, {
             message: 'Post updated successfully',
             post
@@ -278,6 +297,7 @@ const deletePost = async (req, res) => {
         // Set post to hidden instead of deleting media files
         post.isHidden = true;
         await post.save();
+        await invalidateCache(`tirthPosts:${req.params.tirthId}:page:1:limit:10`);
 
         return successResponse(res, {
             message: 'Post deleted successfully'

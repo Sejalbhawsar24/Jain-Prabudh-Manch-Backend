@@ -7,7 +7,8 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
-
+const { getOrSetCache, invalidateCache } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 // Create a post as Panch member
 const createPanchPost = asyncHandler(async (req, res) => {
   try {
@@ -32,7 +33,7 @@ const createPanchPost = asyncHandler(async (req, res) => {
     let mediaFiles = [];
     if (req.files?.media) {
       mediaFiles = req.files.media.map(file => ({
-        url: file.location,
+        url: convertS3UrlToCDN(file.location),
         type: file.mimetype.startsWith('image/') ? 'image' : 'video'
       }));
     }
@@ -50,7 +51,10 @@ const createPanchPost = asyncHandler(async (req, res) => {
     const populatedPost = await PanchPost.findById(post._id)
       .populate('panchId', 'accessId')
       .populate('sanghId', 'name level location');
-
+      await invalidateCache('panchPosts:page:1:limit:10')
+      await invalidatePattern(`panchPosts:${panchGroup._id}:*`);
+      await invalidatePattern('allPanchPosts:*');
+      await invalidateCache(`panch:${panchGroup._id}:stats`);
     return successResponse(res, populatedPost, 'Post created successfully', 201);
   } catch (error) {
     return errorResponse(res, error.message, 500);

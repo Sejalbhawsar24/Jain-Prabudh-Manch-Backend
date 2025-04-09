@@ -80,7 +80,7 @@ app.use("/api/user",authRouter)
 // Protected routes (require authentication)
 app.use("/api/JainAadhar", authMiddleware, jainAdharRouter);
 app.use("/api/friendship", authMiddleware, friendshipRoutes);
-app.use('/api/posts', authMiddleware, postRoutes);
+app.use('/api/posts', postRoutes);
 app.use('/api/stories', storyRoutes);
 app.use('/api/notification', authMiddleware, notificationRoutes);
 app.use('/api/messages', authMiddleware, messageRoutes);

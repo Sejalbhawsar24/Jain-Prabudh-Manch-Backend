@@ -2,7 +2,7 @@ const SadhuPost = require('../../model/SadhuModels/sadhuPostModel');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
-//const { convertS3UrlToCDN } = require('../../utils/s3Utils');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 //const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
 
 
@@ -27,7 +27,7 @@ const createSadhuPost = async (req, res) => {
             if (req.files.image) {
                 media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
                 })));
             }
             
@@ -35,7 +35,7 @@ const createSadhuPost = async (req, res) => {
             if (req.files.video) {
                 media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
                 })));
             }
             
@@ -46,6 +46,7 @@ const createSadhuPost = async (req, res) => {
         await post.save();
 
         await post.populate('postedByUserId', 'firstName lastName profilePicture');
+        await invalidateCache(`sadhuPosts:${req.sadhu._id}:page:1:limit:10`);
 
         return successResponse(res, {
             message: 'Post created successfully',
@@ -113,7 +114,7 @@ const getSadhuPosts = async (req, res) => {
     try {
         const { sadhuId } = req.params;
         const { page = 1, limit = 10 } = req.query;
-        
+        const cacheKey = `sadhuPosts:${sadhuId}:page:${page}:limit:${limit}`;
         const posts = await SadhuPost.find({ 
             sadhuId,
             isHidden: false 
@@ -337,14 +338,14 @@ const updateSadhuPost = async (req, res) => {
             if (req.files.image) {
                 post.media.push(...req.files.image.map(file => ({
                     type: 'image',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
                 })));
             }
             
             if (req.files.video) {
                 post.media.push(...req.files.video.map(file => ({
                     type: 'video',
-                    url: file.location
+                    url: convertS3UrlToCDN(file.location)
                 })));
             }
         }

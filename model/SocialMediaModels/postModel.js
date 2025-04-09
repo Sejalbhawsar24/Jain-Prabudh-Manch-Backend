@@ -14,7 +14,7 @@ const postSchema = new mongoose.Schema(
     media: [{
       url: {
         type: String,
-        required: true
+        //required: true
       },
       type: {
         type: String,
@@ -24,6 +24,7 @@ const postSchema = new mongoose.Schema(
         type: String
       }
     }],
+    postType: { type: String, enum: ['text', 'media'], default: 'text' },
     emoji: {
     type: String, 
     default: "",
