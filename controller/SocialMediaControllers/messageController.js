@@ -6,6 +6,8 @@ const mongoose = require('mongoose');
 const {getIo, getUserStatus}  = require('../../websocket/socket');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
+const { getOrSetCache,invalidateCache,invalidatePattern } = require('../../utils/cache');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 
 // Create a new message
 exports.createMessage = async (req, res) => {
@@ -38,11 +40,13 @@ exports.createMessage = async (req, res) => {
       }
       return errorResponse(res, 'Sender or receiver not found', 400);
     }
-     // Find or create conversation
-     let conversation = await Conversation.findOne({
-      participants: { $all: [sender, receiver] }
-    });
-
+    const conversationCacheKey = `conversation:${sender}:${receiver}`;
+    // Find or create conversation
+    let conversation = await getOrSetCache(conversationCacheKey, async () => {
+      return await Conversation.findOne({
+        participants: { $all: [sender, receiver] }
+      });
+    }, 300);
     if (!conversation) {
       conversation = new Conversation({
         participants: [sender, receiver]
@@ -56,7 +60,7 @@ exports.createMessage = async (req, res) => {
       message: message,
       attachments: req.file ? [{
         type: 'image',
-        url: req.file.location,
+        url: convertS3UrlToCDN(req.file.location),
         name: req.file.originalname,
         size: req.file.size
       }] : [],
@@ -68,7 +72,8 @@ exports.createMessage = async (req, res) => {
     conversation.messages.push(newMessage._id);
     conversation.lastMessage = newMessage._id;
     await conversation.save();
-
+    await invalidateCache(`conversation:${sender}:${receiver}`);
+    await invalidateCache(`conversation:${receiver}:${sender}`); 
     // Get decrypted message for socket emission
     const decryptedMessage = newMessage.decryptedMessage;
       // Emit real-time message event
@@ -84,6 +89,8 @@ exports.createMessage = async (req, res) => {
           profilePicture: senderUser.profilePicture
         }
       });
+      await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
+      await invalidatePattern(`messages:${receiver}:${sender}:page:*`); 
       return successResponse(res, {
         ...newMessage.toObject(),
         message: decryptedMessage // Send decrypted message in response
@@ -162,17 +169,23 @@ exports.getAllMessages = async (req, res) => {
 exports.getConversations = async (req, res) => {
   try {
     const userId = req.params.userId;
-
-    const conversations = await Conversation.find({
-      participants: userId
-    })
+    const cacheKey = `conversations:${userId}`;
+    
+    const conversations = await getOrSetCache(cacheKey, async () => {
+      return await Conversation.find({
+        participants: userId
+      })
       .populate('participants', 'fullName profilePicture')
+      .populate({
+        path: 'lastMessage',
+        select: 'text createdAt sender' // or other required fields
+      })
       .sort({ updatedAt: -1 });
-
+    }, 60); // Cache for 1 minute
     if (!conversations || conversations.length === 0) {
       return errorResponse(res, 'No conversations found', 404);
     }
-
+    
     return successResponse(res, conversations, 'Conversations retrieved', 200);
   } catch (error) {
     return errorResponse(res, 'Error fetching conversations', 500, error);
@@ -221,6 +234,10 @@ exports.deleteMessageById = async (req, res) => {
       }
     }
     await message.deleteOne(); // Delete message from database
+    const sender = message.sender.toString();
+    const receiver = message.receiver.toString();
+    await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
+    await invalidatePattern(`messages:${receiver}:${sender}:page:*`);
     // Notify other user about message deletion
     const io = getIo();
     io.to(message.receiver.toString()).emit('messageDeleted', { messageId: id });

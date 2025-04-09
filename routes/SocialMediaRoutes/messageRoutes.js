@@ -30,5 +30,11 @@ router.delete('/delete/:id', authenticate,deleteMessageById);
 router.put('/update/:messageId',updateMessageById);
 // Get unread messages count
 router.get('/unread/:userId', getUnreadMessagesCount);
+router.get('/conversations/:userId', 
+  [
+    param('userId').isMongoId().withMessage('Invalid user ID')
+  ],
+  getConversations
+);
 
 module.exports = router;
