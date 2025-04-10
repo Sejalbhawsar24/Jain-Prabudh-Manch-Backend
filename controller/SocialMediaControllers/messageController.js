@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const {getIo, getUserStatus}  = require('../../websocket/socket');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
-const { getOrSetCache,invalidateCache,invalidatePattern } = require('../../utils/cache');
+const { getOrSetCache,invalidateCache } = require('../../utils/cache');
 const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 
 // Create a new message
@@ -89,8 +89,7 @@ exports.createMessage = async (req, res) => {
           profilePicture: senderUser.profilePicture
         }
       });
-      await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
-      await invalidatePattern(`messages:${receiver}:${sender}:page:*`); 
+
       return successResponse(res, {
         ...newMessage.toObject(),
         message: decryptedMessage // Send decrypted message in response
@@ -114,53 +113,83 @@ exports.createMessage = async (req, res) => {
 
 // Get messages between sender and receiver
 exports.getMessages = async (req, res) => {
-    try {
-      const { sender, receiver } = req.query;
-      if (!sender || !receiver) {
-        return res.status(400).json({ message: 'Sender and receiver are required' });
-      }
-      const messages = await Message.find({
+  try {
+    const { sender, receiver, limit = 30, page = 1, noPopulate = false } = req.query;
+    if (!sender || !receiver) {
+      return res.status(400).json({ message: 'Sender and receiver are required' });
+    }
+
+    const users = [sender, receiver].sort();
+    const cacheKey = `messages:${users[0]}:${users[1]}:page:${page}:limit:${limit}`;
+
+    const skip = (page - 1) * limit;
+
+    const messages = await getOrSetCache(cacheKey, async () => {
+      const query = Message.find({
         $or: [
           { sender, receiver },
           { sender: receiver, receiver: sender },
-        ],
-      }).sort({ createdAt: 1 })
-      .populate('sender', 'firstName lastName profilePicture')
-      .populate('receiver', 'firstName lastName profilePicture');
-      // Mark messages as read
-    await Message.updateMany(
+        ]
+      })
+      .sort({ createdAt: -1 }) // Latest first
+      .skip(skip)
+      .limit(parseInt(limit));
+
+      if (noPopulate === 'true') {
+        return await query.select('text image video createdAt sender receiver'); // Basic fields only
+      } else {
+        return await query
+          .populate('sender', 'firstName lastName profilePicture')
+          .populate('receiver', 'firstName lastName profilePicture');
+      }
+    }, 60); // Cache for 1 min
+
+    // Mark as read (non-blocking)
+    Message.updateMany(
       { sender: receiver, receiver: sender, isRead: false },
       { isRead: true }
-    );
-       // Emit read receipt
+    ).exec();
+
+    // Emit read receipt
     const io = getIo();
     io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
 
-    // Get participants' online status
+    // Get participants' status (fast)
     const senderStatus = getUserStatus(sender);
     const receiverStatus = getUserStatus(receiver);
-   return successResponse(res, {
-      messages: messages.reverse(),
+
+    return successResponse(res, {
+      messages: messages.reverse(), // Oldest at top
       participants: {
         [sender]: senderStatus,
         [receiver]: receiverStatus
       }
     }, 'Messages retrieved successfully', 200);
+
   } catch (error) {
     return errorResponse(res, 'Error retrieving messages', 500, error);
   }
 };
-  
+
 // Get all messages for a user
 exports.getAllMessages = async (req, res) => {
   try {
     const userId = req.params.userId;
-    const messages = await Message.find({
-      $or: [{ sender: userId }, { receiver: userId }],
-    })
-      .populate('sender', 'firstName lastName profilePicture') 
-      .populate('receiver', 'firstName lastName profilePicture')
-      .sort({ createdAt: -1 });
+    const cacheKey = `messages:${userId}`;
+
+    const messages = await getOrSetCache(cacheKey, async () => {
+      return await Message.find({
+        $or: [{ sender: userId }, { receiver: userId }],
+      })
+        .populate('sender', 'firstName lastName profilePicture')
+        .populate('receiver', 'firstName lastName profilePicture')
+        .sort({ createdAt: -1 });
+    }, 60); // Cache for 1 minute
+
+    if (!messages || messages.length === 0) {
+      return res.status(404).json({ message: 'No messages found' });
+    }
+
     res.status(200).json({ messages });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching messages', error });
@@ -236,8 +265,6 @@ exports.deleteMessageById = async (req, res) => {
     await message.deleteOne(); // Delete message from database
     const sender = message.sender.toString();
     const receiver = message.receiver.toString();
-    await invalidatePattern(`messages:${sender}:${receiver}:page:*`);
-    await invalidatePattern(`messages:${receiver}:${sender}:page:*`);
     // Notify other user about message deletion
     const io = getIo();
     io.to(message.receiver.toString()).emit('messageDeleted', { messageId: id });

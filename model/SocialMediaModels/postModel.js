@@ -25,6 +25,9 @@ const postSchema = new mongoose.Schema(
       }
     }],
     postType: { type: String, enum: ['text', 'media'], default: 'text' },
+    text:{
+      type:String
+    },
     emoji: {
     type: String, 
     default: "",

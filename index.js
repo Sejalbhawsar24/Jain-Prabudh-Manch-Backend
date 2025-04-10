@@ -48,6 +48,7 @@ const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
 const vyaparRoutes = require('./routes/VyaparRoutes/vyaparRoutes');
 const vyaparPostRoutes = require('./routes/VyaparRoutes/vyaparPostRoutes');
 
+app.set('trust proxy',1)
 // connect to databse
 dbConnect();
 app.use(helmet());

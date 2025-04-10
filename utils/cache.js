@@ -4,12 +4,28 @@ const redis = require('../config/redisClient');
 const getOrSetCache = async (key, fetchFn, ttl = 300) => {
   try {
     const cachedData = await redis.get(key);
+    
     if (cachedData) {
-      return JSON.parse(cachedData);
+      // Check if the data is already an object or needs parsing
+      if (typeof cachedData === 'string') {
+        try {
+          return JSON.parse(cachedData);
+        } catch (parseError) {
+          console.error('Parse error:', parseError);
+          return cachedData; // Return as is if parsing fails
+        }
+      }
+      return cachedData; // It's already an object, return as is
     }
 
     const freshData = await fetchFn();
-    await redis.set(key, JSON.stringify(freshData), 'EX', ttl);
+    
+    // Store data in Redis
+    // Make sure we're storing a string if it's an object
+    const dataToStore = typeof freshData === 'object' ? 
+      JSON.stringify(freshData) : freshData;
+      
+    await redis.set(key, dataToStore, 'EX', ttl);
     return freshData;
   } catch (error) {
     console.error('Cache error:', error);
@@ -28,14 +44,13 @@ const invalidateCache = async (key) => {
 const invalidatePattern = async (pattern) => {
   try {
     const keys = await redis.keys(pattern);
-    if (keys.length > 0) {
-      await redis.del(keys);
+    if (keys && keys.length > 0) {
+      await Promise.all(keys.map(key => redis.del(key)));
     }
   } catch (error) {
     console.error('Pattern invalidation error:', error);
   }
 };
-
 
 const invalidatePostCaches = async (userId) => {
   await invalidatePattern(`userPosts:${userId}:*`);

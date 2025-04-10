@@ -11,7 +11,7 @@ const PanchPost = require('../../model/SanghModels/panchPostModel');
 const VyaparPost = require('../../model/VyaparModels/vyaparPostModel');
 const TirthPost = require('../../model/TirthModels/tirthPostModel');
 const SadhuPost = require('../../model/SadhuModels/sadhuPostModel');
-const { getOrSetCache, invalidateCache, invalidatePattern } = require('../../utils/cache');
+const { getOrSetCache, invalidateCache } = require('../../utils/cache');
 const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
@@ -71,7 +71,6 @@ const createPost = [
     const post = await Post.create({ user: userId, caption, media, postType });
     user.posts.push(post._id);
     await user.save();
-    await invalidatePattern(`userPosts:${userId}:*`); // Invalidate all paginated user post caches
     await invalidateCache('combinedFeed:*'); // Invalidate all feed variations
     await invalidateCache('combinedFeed:firstPage:limit:10');
     res.status(201).json(post);
@@ -220,46 +219,102 @@ const getPostById = asyncHandler(async (req, res) => {
 // Get all posts
 const getAllPosts = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const limit = parseInt(req.query.limit) || 5;
+    const cursor = req.query.cursor;
+    
+    // Skip the cache when debugging pagination
+    // Or create a unique cache key that includes a timestamp
+    const cacheKey = cursor
+      ? `allUserPosts:cursor:${cursor}:limit:${limit}:page:${req.query.page || 1}`
+      : `allUserPosts:firstPage:limit:${limit}`;
 
-    const cacheKey = `allUserPosts:page:${page}:limit:${limit}`;
+    // Add a page parameter to your API call
+    const page = parseInt(req.query.page) || 1;
+    const skip = cursor ? 0 : (page - 1) * limit;
 
     const result = await getOrSetCache(cacheKey, async () => {
-      const posts = await Post.find()
+      // If using cursor, get posts older than the cursor
+      // If not using cursor but using page, skip the appropriate number
+      const cursorQuery = cursor ? { createdAt: { $lt: new Date(cursor) } } : {};
+      
+      console.log("Query params:", { cursor, cursorDate: cursor ? new Date(cursor) : null, limit, skip });
+      
+      const posts = await Post.find(cursorQuery)
         .populate('user', 'firstName lastName profilePicture')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean();
-
-      const total = await Post.countDocuments({ isHidden: false });
-
+      
+      // Log the actual createdAt values to debug
+      console.log("Post dates:", posts.map(p => p.createdAt));
+      
+      // Get the timestamp of the last post for the next cursor
+      const nextCursor = posts.length > 0
+        ? posts[posts.length - 1].createdAt.toISOString()
+        : null;
+      
+      // Check if there are more posts after this batch
+      const hasMore = posts.length === limit;
+      
       return {
         posts,
         pagination: {
-          total,
-          page,
-          pages: Math.ceil(total / limit),
+          nextCursor,
+          hasMore,
+          currentPage: page,
         }
       };
-    }, 180); // Cache for 3 minutes
+    }, 30); // Reduce cache time during debugging
 
-    result.posts = result.posts.map(post => ({
-      ...post,
-      media: post.media.map(m => ({
-        ...m,
-        url: convertS3UrlToCDN(m.url)
-      }))
-    }));
-    
+    // Rest of your code...
     return successResponse(res, result, 'All user posts fetched');
-    
   } catch (error) {
     return errorResponse(res, 'Failed to fetch posts', 500, error.message);
   }
 };
+// const getAllPosts = async (req, res) => {
+//   try {
+//     const cacheKey = `allUserPosts:all`;
+
+//     const result = await getOrSetCache(cacheKey, async () => {
+//       // Fetch all visible posts without pagination
+//       const posts = await Post.find({ isHidden: false })
+//         .populate('user', 'firstName lastName profilePicture')
+//         .sort({ createdAt: -1 })  // Most recent first
+//         .lean();
+
+//       if (!posts || posts.length === 0) {
+//         return {
+//           posts: [],
+//           pagination: { nextCursor: null, hasMore: false },
+//         };
+//       }
+
+//       return {
+//         posts,
+//         pagination: {
+//           nextCursor: null,
+//           hasMore: false,
+//         }
+//       };
+//     }, 180); // Cache for 3 minutes
+
+//     // Convert S3 URL to CDN
+//     result.posts = result.posts.map(post => ({
+//       ...post,
+//       media: post.media.map(m => ({
+//         ...m,
+//         url: convertS3UrlToCDN(m.url)
+//       }))
+//     }));
+
+//     return successResponse(res, result, 'All user posts fetched');
+
+//   } catch (error) {
+//     return errorResponse(res, 'Failed to fetch posts', 500, error.message);
+//   }
+// };
 
 
 // Function to toggle like on a post
@@ -383,7 +438,7 @@ const deletePost = asyncHandler(async (req, res) => {
   await user.save();
   await post.deleteOne();
   await invalidateCache(`post:${postId}`);
-  await invalidatePattern(`userPosts:${userId}:*`);
+  (`userPosts:${userId}:*`);
   await invalidateCache('combinedFeed:*');
   await invalidateCache('combinedFeed:firstPage:limit:10');
   res.json({ message: 'Post deleted successfully' });
