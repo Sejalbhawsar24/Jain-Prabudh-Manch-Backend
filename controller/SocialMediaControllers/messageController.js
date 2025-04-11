@@ -112,65 +112,190 @@ exports.createMessage = async (req, res) => {
   };
 
 // Get messages between sender and receiver
+// exports.getMessages = async (req, res) => {
+//   try {
+//     const { sender, receiver, limit = 20, cursor } = req.query;
+
+//     if (!sender || !receiver) {
+//       return errorResponse(res, 'Sender and receiver are required', 400);
+//     }
+
+//     const cacheKey = cursor 
+//       ? `messages:${sender}:${receiver}:cursor:${cursor}:limit:${limit}`
+//       : `messages:${sender}:${receiver}:recent:limit:${limit}`;
+
+//     const result = await getOrSetCache(cacheKey, async () => {
+//       // Base query condition
+//       const queryCondition = {
+//         $or: [
+//           { sender, receiver },
+//           { sender: receiver, receiver: sender },
+//         ]
+//       };
+
+//       // Add cursor condition if provided
+//       if (cursor) {
+//         queryCondition.createdAt = { $lt: new Date(cursor) };
+//       }
+
+//       const messages = await Message.find(queryCondition)
+//         .sort({ createdAt: -1 })
+//         .limit(parseInt(limit))
+//         .populate('sender', 'fullName profilePicture')
+//         .populate('receiver', 'fullName profilePicture');
+
+//       // Mark messages as read (only for recent messages)
+//       if (!cursor) {
+//         await Message.updateMany(
+//           { sender: receiver, receiver: sender, isRead: false },
+//           { isRead: true }
+//         );
+//       }
+
+//       // Get the oldest timestamp for next cursor
+//       const nextCursor = messages.length > 0 
+//         ? messages[messages.length - 1].createdAt.toISOString() 
+//         : null;
+
+//       return {
+//         messages: messages.reverse(), // chronological order
+//         pagination: {
+//           nextCursor,
+//           hasMore: messages.length === parseInt(limit)
+//         }
+//       };
+//     }, 180); // TTL 3 mins
+
+//     // Emit read receipt
+//     const io = getIo();
+//     io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
+  
+//     const senderStatus = getUserStatus(sender);
+//     const receiverStatus = getUserStatus(receiver);
+
+//     result.participants = {
+//       [sender]: senderStatus,
+//       [receiver]: receiverStatus
+//     };
+//     await invalidateCache(`unreadCount:${sender}`);
+
+//     return successResponse(res, result, 'Messages retrieved successfully', 200);
+//   } catch (error) {
+//     return errorResponse(res, 'Error retrieving messages', 500, error);
+//   }
+// };
+// // Get messages between sender and receiver
+// exports.getMessages = async (req, res) => {
+//   try {
+//     const { sender, receiver, limit = 20, cursor } = req.query;
+
+//     if (!sender || !receiver) {
+//       return errorResponse(res, 'Sender and receiver are required', 400);
+//     }
+
+//     const cacheKey = cursor 
+//       ? `messages:${sender}:${receiver}:cursor:${cursor}:limit:${limit}`
+//       : `messages:${sender}:${receiver}:recent:limit:${limit}`;
+
+//     const result = await getOrSetCache(cacheKey, async () => {
+//       // Base query condition
+//       const queryCondition = {
+//         $or: [
+//           { sender, receiver },
+//           { sender: receiver, receiver: sender },
+//         ]
+//       };
+
+//       // Add cursor condition if provided
+//       if (cursor) {
+//         queryCondition.createdAt = { $lt: new Date(cursor) };
+//       }
+
+//       const messages = await Message.find(queryCondition)
+//         .sort({ createdAt: -1 })
+//         .limit(parseInt(limit))
+//         .populate('sender', 'fullName profilePicture')
+//         .populate('receiver', 'fullName profilePicture');
+
+//       // Mark messages as read (only for recent messages)
+//       if (!cursor) {
+//         await Message.updateMany(
+//           { sender: receiver, receiver: sender, isRead: false },
+//           { isRead: true }
+//         );
+//       }
+
+//       // Get the oldest timestamp for next cursor
+//       const nextCursor = messages.length > 0 
+//         ? messages[messages.length - 1].createdAt.toISOString() 
+//         : null;
+
+//       return {
+//         messages: messages.reverse(), // chronological order
+//         pagination: {
+//           nextCursor,
+//           hasMore: messages.length === parseInt(limit)
+//         }
+//       };
+//     }, 180); // TTL 3 mins
+
+//     // Emit read receipt
+//     const io = getIo();
+//     io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
+  
+//     const senderStatus = getUserStatus(sender);
+//     const receiverStatus = getUserStatus(receiver);
+
+//     result.participants = {
+//       [sender]: senderStatus,
+//       [receiver]: receiverStatus
+//     };
+//     await invalidateCache(`unreadCount:${sender}`);
+
+//     return successResponse(res, result, 'Messages retrieved successfully', 200);
+//   } catch (error) {
+//     return errorResponse(res, 'Error retrieving messages', 500, error);
+//   }
+// };
+
+// new get mesage
 exports.getMessages = async (req, res) => {
   try {
-    const { sender, receiver, limit = 30, page = 1, noPopulate = false } = req.query;
+    const { sender, receiver } = req.query;
     if (!sender || !receiver) {
       return res.status(400).json({ message: 'Sender and receiver are required' });
     }
+    const messages = await Message.find({
+      $or: [
+        { sender, receiver },
+        { sender: receiver, receiver: sender },
+      ],
+    }).sort({ createdAt: 1 })
+    .populate('sender', 'firstName lastName profilePicture')
+    .populate('receiver', 'firstName lastName profilePicture');
+    // Mark messages as read
+  await Message.updateMany(
+    { sender: receiver, receiver: sender, isRead: false },
+    { isRead: true }
+  );
+     // Emit read receipt
+  const io = getIo();
+  io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
 
-    const users = [sender, receiver].sort();
-    const cacheKey = `messages:${users[0]}:${users[1]}:page:${page}:limit:${limit}`;
-
-    const skip = (page - 1) * limit;
-
-    const messages = await getOrSetCache(cacheKey, async () => {
-      const query = Message.find({
-        $or: [
-          { sender, receiver },
-          { sender: receiver, receiver: sender },
-        ]
-      })
-      .sort({ createdAt: -1 }) // Latest first
-      .skip(skip)
-      .limit(parseInt(limit));
-
-      if (noPopulate === 'true') {
-        return await query.select('text image video createdAt sender receiver'); // Basic fields only
-      } else {
-        return await query
-          .populate('sender', 'firstName lastName profilePicture')
-          .populate('receiver', 'firstName lastName profilePicture');
-      }
-    }, 60); // Cache for 1 min
-
-    // Mark as read (non-blocking)
-    Message.updateMany(
-      { sender: receiver, receiver: sender, isRead: false },
-      { isRead: true }
-    ).exec();
-
-    // Emit read receipt
-    const io = getIo();
-    io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
-
-    // Get participants' status (fast)
-    const senderStatus = getUserStatus(sender);
-    const receiverStatus = getUserStatus(receiver);
-
-    return successResponse(res, {
-      messages: messages.reverse(), // Oldest at top
-      participants: {
-        [sender]: senderStatus,
-        [receiver]: receiverStatus
-      }
-    }, 'Messages retrieved successfully', 200);
-
-  } catch (error) {
-    return errorResponse(res, 'Error retrieving messages', 500, error);
-  }
+  // Get participants' online status
+  const senderStatus = getUserStatus(sender);
+  const receiverStatus = getUserStatus(receiver);
+ return successResponse(res, {
+    messages: messages.reverse(),
+    participants: {
+      [sender]: senderStatus,
+      [receiver]: receiverStatus
+    }
+  }, 'Messages retrieved successfully', 200);
+} catch (error) {
+  return errorResponse(res, 'Error retrieving messages', 500, error);
+}
 };
-
 // Get all messages for a user
 exports.getAllMessages = async (req, res) => {
   try {
@@ -190,11 +315,19 @@ exports.getAllMessages = async (req, res) => {
       return res.status(404).json({ message: 'No messages found' });
     }
 
-    res.status(200).json({ messages });
+    const unreadCount = messages.filter(
+      (msg) =>
+        msg.isRead === false &&
+        msg.receiver &&
+        msg.receiver._id.toString() === userId
+    ).length;
+  
+    res.status(200).json({ messages, unreadCount });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching messages', error });
   }
 };
+
 exports.getConversations = async (req, res) => {
   try {
     const userId = req.params.userId;
@@ -336,10 +469,12 @@ exports.updateMessageById = async (req, res) => {
 exports.getUnreadMessagesCount = async (req, res) => {
   try {
     const { userId } = req.params;
+
     const count = await Message.countDocuments({
-      receiver: userId,
+      'receiver._id': new mongoose.Types.ObjectId(userId),
       isRead: false
     });
+
     res.status(200).json({ unreadCount: count });
   } catch (error) {
     res.status(500).json({ message: 'Error getting unread count', error });

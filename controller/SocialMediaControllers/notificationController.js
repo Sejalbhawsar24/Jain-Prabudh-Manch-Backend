@@ -44,23 +44,21 @@ exports.getNotifications = async (req, res) => {
 };
 
 //  Notification Read Mark Karna
-exports.markAsRead = async (req, res) => {
+exports.markAllNotificationsRead = async (req, res) => {
   try {
-    const { notificationId } = req.params;
-    const notification = await Notification.findByIdAndUpdate(
-      notificationId,
-      { isRead: true },
-      { new: true }
+    const { userId } = req.params;
+
+    const result = await Notification.updateMany(
+      { receiverId: userId, isRead: false },
+      { $set: { isRead: true } }
     );
-    if (!notification) {
-      return res.status(404).json({ success: false, message: 'Notification not found' });
-    }
-    // Emit a WebSocket event to the receiver
-    const io = getIo();
-    io.to(notification.receiverId.toString()).emit('notificationRead', notification);
-    res.status(200).json({ success: true, message: 'Notification marked as read' });
+
+    res.status(200).json({
+      success: true,
+      message: `${result.modifiedCount} notifications marked as read`,
+    });
   } catch (error) {
-    console.error('Error marking notification as read:', error);
-    res.status(500).json({ success: false, message: 'Failed to mark notification as read' });
+    console.error('Error marking all notifications as read:', error);
+    res.status(500).json({ success: false, message: 'Failed to mark notifications as read' });
   }
 };
