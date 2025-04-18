@@ -350,7 +350,7 @@ const loginUser = [
 ];
 // Enhanced user search with pagination and filters
 const getAllUsers = asyncHandler(async (req, res) => {
-    const { search,city, gender, role } = req.query;
+    const { search, city, gender, role, page = 1, limit = 10 } = req.query;
 
     let query = {};
     
@@ -370,22 +370,29 @@ const getAllUsers = asyncHandler(async (req, res) => {
     // Gender Filter
     if (gender) query.gender = gender;
     
-    // Role Filter (New)
+    // Role Filter
     if (role) query.role = role;
 
     console.log("Final Query:", query); // Debugging ke liye
 
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
     const users = await User.find(query)
         .select('-password -__v')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit));
 
     const total = await User.countDocuments(query);
 
     res.json({
         users: users || [],
-        totalUsers: total
+        totalUsers: total,
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit))
     });
 });
+
 
 
 // Enhanced user profile retrieval

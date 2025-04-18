@@ -47,7 +47,7 @@ const { initializeWebSocket } = require('./websocket/socket');
 const { scheduleStoryCleanup } = require('./jobs/storyCleanupJob');
 const vyaparRoutes = require('./routes/VyaparRoutes/vyaparRoutes');
 const vyaparPostRoutes = require('./routes/VyaparRoutes/vyaparPostRoutes');
-
+const inquiryRoutes = require('./routes/SanghRoutes/inquiryRoutes')
 app.set('trust proxy',1)
 // connect to databse
 dbConnect();
@@ -116,12 +116,14 @@ app.use('/api/tirth/posts', tirthPostRoutes);
 app.use('/api/sadhu', sadhuRoutes);
 app.use('/api/sadhu/posts', sadhuPostRoutes);
 
+// Sangh Routes
 app.use('/api/hierarchical-sangh', authMiddleware, hierarchicalSanghRoutes);
 app.use('/api/sangh-access', authMiddleware, sanghAccessRoutes);
 app.use('/api/sangh-posts', authMiddleware, sanghPostRoutes);
 app.use('/api/panch', authMiddleware, panchayatRoutes);
 app.use('/api/panch-posts', authMiddleware, panchPostRoutes);
 app.use('/api/locations', locationRoutes);
+app.use('/api/inqury', inquiryRoutes)
 // Admin API routes
 app.use("/api/admin", adminRouter);
 

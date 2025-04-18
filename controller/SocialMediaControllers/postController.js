@@ -15,7 +15,7 @@ const { getOrSetCache, invalidateCache } = require('../../utils/cache');
 const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
-
+const redisClient = require('../../config/redisClient')
 // Create a post
 // const createPost = asyncHandler(async (req, res) => {
 //   const { caption, image, userId } = req.body;
@@ -115,7 +115,7 @@ const getPostById = asyncHandler(async (req, res) => {
   if (!postId) {
     return res.status(400).json({ error: 'Post ID is required' });
   }
-
+  await redisClient.del(`post:${postId}`);
   // filter hata diya aur postId se direct search kar rahe hain
   const post = await getOrSetCache(`post:${postId}`, async () => {
     return await Post.findById(postId)
@@ -126,6 +126,7 @@ const getPostById = asyncHandler(async (req, res) => {
       })
       .populate({
         path: 'comments.replies.user',
+        model: 'User',
         select: 'firstName lastName profilePicture',
       });
   }, 3600); 

@@ -107,7 +107,7 @@ const hierarchicalSanghSchema = new mongoose.Schema({
     location: {
         country: {
             type: String,
-           // required: true,
+            required: true,
             default: 'India'
         },
         state: {
@@ -214,7 +214,6 @@ hierarchicalSanghSchema.pre('save', async function(next) {
     next();
 });
 
-// Add validation methods and middleware here
 hierarchicalSanghSchema.methods.validateHierarchy = async function() {
     if (this.level === 'country') {
         if (this.parentSangh) {
@@ -223,9 +222,9 @@ hierarchicalSanghSchema.methods.validateHierarchy = async function() {
         return;
     }
 
-    // if (!this.parentSangh) {
-    //     throw new Error('Non-country level Sangh must have a parent Sangh');
-    // }
+    if (!this.parentSangh) {
+        throw new Error('Non-country level Sangh must have a parent Sangh');
+    }
 
     const parentSangh = await this.constructor.findById(this.parentSangh);
     if (!parentSangh) {
@@ -281,11 +280,13 @@ hierarchicalSanghSchema.methods.getChildSanghs = async function() {
         .select('-members');
 };
 
-// Add indexes
-hierarchicalSanghSchema.index({ level: 1, status: 1 });
-hierarchicalSanghSchema.index({ parentSangh: 1 }); // status index is already covered above
-hierarchicalSanghSchema.index({ createdAt: -1 });
-// Use a sparse index for sanghAccessId to allow multiple null values
-hierarchicalSanghSchema.index({ sanghAccessId: 1 }, { sparse: true });
+// Optimize indexes for common query patterns
+hierarchicalSanghSchema.index({ level: 1 });
+hierarchicalSanghSchema.index({ parentSanghId: 1 });
+hierarchicalSanghSchema.index({ state: 1 });
+hierarchicalSanghSchema.index({ district: 1 });
+hierarchicalSanghSchema.index({ city: 1 });
+// Compound indexes for location-based queries
+hierarchicalSanghSchema.index({ state: 1, district: 1, city: 1 });
 
 module.exports = mongoose.model('HierarchicalSangh', hierarchicalSanghSchema); 

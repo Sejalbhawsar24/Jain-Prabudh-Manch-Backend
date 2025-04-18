@@ -377,6 +377,7 @@ const isMainSanghPresident = async (req, res, next) => {
 };
 
 // Check if user is a president of a specialized Sangh (women/youth)
+// Check if user is a president of a specialized Sangh (women/youth)
 const isSpecializedSanghPresident = async (req, res, next) => {
     try {
         const userId = req.user._id;
@@ -417,9 +418,6 @@ const canManageSpecializedSangh = asyncHandler(async (req, res, next) => {
     try {
         const sanghId = req.params.sanghId || req.params.id;
         const userId = req.user._id;
-        
-        console.log('Specialized Sangh middleware - sanghId:', sanghId);
-        console.log('Specialized Sangh middleware - userId:', userId);
 
         // If user is superadmin, grant full access
         if (req.user.role === 'superadmin' || req.user.role === 'admin') {
@@ -576,7 +574,6 @@ const canCreateSpecializedSangh = asyncHandler(async (req, res, next) => {
         return errorResponse(res, error.message, 500);
     }
 });
-
 module.exports = {
     isPresident,
     isOfficeBearer,

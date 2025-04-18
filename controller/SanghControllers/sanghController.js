@@ -6,6 +6,14 @@ const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { extractS3KeyFromUrl } = require('../../utils/s3Utils');
 
+
+// Helper Functions
+const formatFullName = (firstName, lastName) => {
+  return lastName.toLowerCase() === 'jain' 
+      ? `${firstName} Jain`
+      : `${firstName} Jain (${lastName})`;
+};
+
 // Validation functions
 const validateOfficeBearerAvailability = async (officeBearers, level) => {
   const positions = ['president', 'secretary', 'treasurer'];

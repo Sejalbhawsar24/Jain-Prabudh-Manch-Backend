@@ -39,7 +39,6 @@ const validateOfficeBearers = async (officeBearers) => {
         }
     }
 };
-// Controller Functions
 // Create new Sangh
 const createHierarchicalSangh = asyncHandler(async (req, res) => {
     try {
@@ -56,8 +55,8 @@ const createHierarchicalSangh = asyncHandler(async (req, res) => {
             parentSanghAccessId,
             sanghType = 'main'
         } = req.body;
-        console.log("parentSanghId in request:", req.body);
-        console.log("Received parentSanghId:", req.body.parentSanghId);
+        // console.log("parentSanghId in request:", req.body);
+        // console.log("Received parentSanghId:", req.body.parentSanghId);
 
          // Validate required fields
         if (!name || !level || !location || !officeBearers) {
@@ -171,9 +170,9 @@ const createHierarchicalSangh = asyncHandler(async (req, res) => {
             parentMainSangh: parentMainSanghId,
             createdBy: req.user._id
         });
-        console.log("Saved Sangh:", sangh);
-        console.log("Assigning parentSangh:", parentSanghId);
-        console.log("Assigning parentMainSangh:", parentMainSanghId);
+        // console.log("Saved Sangh:", sangh);
+        // console.log("Assigning parentSangh:", parentSanghId);
+        // console.log("Assigning parentMainSangh:", parentMainSanghId);
         // Validate hierarchy
         await sangh.validateHierarchy();
         // Update office bearer roles in User model
@@ -218,7 +217,6 @@ const createHierarchicalSangh = asyncHandler(async (req, res) => {
                 }
             }
         }
-        
         if (!existingAccess) {
             // Create new Sangh access
             sanghAccess = await SanghAccess.create({
@@ -228,15 +226,12 @@ const createHierarchicalSangh = asyncHandler(async (req, res) => {
                 createdBy: req.user._id,
                 parentSanghAccess: resolvedParentSanghAccessId
             });
-            
             // Update the Sangh with the sanghAccessId
             await HierarchicalSangh.findByIdAndUpdate(sangh._id, {
                 sanghAccessId: sanghAccess._id
             });
-            
             // Update the local sangh object for response
             sangh.sanghAccessId = sanghAccess._id;
-            
             return successResponse(res, {
                 sangh,
                 accessId: sangh.accessId,
@@ -251,7 +246,6 @@ const createHierarchicalSangh = asyncHandler(async (req, res) => {
                 });
                 sangh.sanghAccessId = existingAccess._id;
             }
-            
             return successResponse(res, {
                 sangh,
                 accessId: sangh.accessId,
