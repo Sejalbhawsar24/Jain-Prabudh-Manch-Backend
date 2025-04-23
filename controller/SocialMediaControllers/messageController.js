@@ -262,9 +262,11 @@ exports.createMessage = async (req, res) => {
 exports.getMessages = async (req, res) => {
   try {
     const { sender, receiver } = req.query;
+
     if (!sender || !receiver) {
       return res.status(400).json({ message: 'Sender and receiver are required' });
     }
+
     const messages = await Message.find({
       $or: [
         { sender, receiver },
@@ -273,28 +275,44 @@ exports.getMessages = async (req, res) => {
     }).sort({ createdAt: 1 })
     .populate('sender', 'firstName lastName profilePicture')
     .populate('receiver', 'firstName lastName profilePicture');
-    // Mark messages as read
-  await Message.updateMany(
-    { sender: receiver, receiver: sender, isRead: false },
-    { isRead: true }
-  );
-     // Emit read receipt
-  const io = getIo();
-  io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
 
-  // Get participants' online status
-  const senderStatus = getUserStatus(sender);
-  const receiverStatus = getUserStatus(receiver);
- return successResponse(res, {
-    messages: messages.reverse(),
-    participants: {
-      [sender]: senderStatus,
-      [receiver]: receiverStatus
-    }
-  }, 'Messages retrieved successfully', 200);
-} catch (error) {
-  return errorResponse(res, 'Error retrieving messages', 500, error);
-}
+    // Mark messages as read
+    await Message.updateMany(
+      { sender: receiver, receiver: sender, isRead: false },
+      { isRead: true }
+    );
+
+    // Convert attachments to use CDN URLs
+    const updatedMessages = messages.map(msg => {
+      const updatedAttachments = msg.attachments?.map(att => ({
+        ...att.toObject(),
+        url: convertS3UrlToCDN(att.url)
+      })) || [];
+
+      return {
+        ...msg.toObject(),
+        attachments: updatedAttachments
+      };
+    });
+
+    // Emit read receipt
+    const io = getIo();
+    io.to(receiver.toString()).emit('messagesRead', { sender, receiver });
+
+    // Get participants' online status
+    const senderStatus = getUserStatus(sender);
+    const receiverStatus = getUserStatus(receiver);
+
+    return successResponse(res, {
+      messages: updatedMessages.reverse(),
+      participants: {
+        [sender]: senderStatus,
+        [receiver]: receiverStatus
+      }
+    }, 'Messages retrieved successfully', 200);
+  } catch (error) {
+    return errorResponse(res, 'Error retrieving messages', 500, error);
+  }
 };
 // Get all messages for a user
 exports.getAllMessages = async (req, res) => {

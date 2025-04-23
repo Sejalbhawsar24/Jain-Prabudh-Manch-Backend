@@ -9,6 +9,7 @@ const { userValidation } = require('../../validators/validations');
 const { errorResponse, successResponse } = require("../../utils/apiResponse");
 const { generateToken } = require("../../helpers/authHelpers");
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../../services/nodemailerEmailService');
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -19,7 +20,6 @@ const authLimiter = rateLimit({
 const generateVerificationCode = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
 };
-
 // Register new user with enhanced security
 const registerUser = [
     userValidation.register,
@@ -69,7 +69,7 @@ const registerUser = [
         const fullName = lastName.toLowerCase() === 'jain' 
             ? `${firstName} Jain`
             : `${firstName} Jain (${lastName})`;
-
+        
         const newUser = await User.create({
             firstName,
             lastName,
@@ -86,13 +86,11 @@ const registerUser = [
             },
             lastLogin: new Date(),
             accountStatus: 'active',
-            registrationStep: 'initial' // Track registration progress
+            registrationStep: 'initial'
         });
             // Send verification email
             try {
                 await sendVerificationEmail(email, firstName, verificationCode);
-    
-    
             } catch (error) {
                 // Don't fail registration if email fails, but log the error
                 console.error('Error sending verification email:', error);
@@ -384,7 +382,11 @@ const getAllUsers = asyncHandler(async (req, res) => {
         .limit(parseInt(limit));
 
     const total = await User.countDocuments(query);
-
+    users.forEach(user => {
+        if (user.profilePicture) {
+            user.profilePicture = convertS3UrlToCDN(user.profilePicture);
+        }
+    });
     res.json({
         users: users || [],
         totalUsers: total,
@@ -412,7 +414,9 @@ const getUserById = asyncHandler(async (req, res) => {
     if (!user) {
         return res.status(404).json({ error: 'User not found' });
     }
-
+    if (user.profilePicture) {
+        user.profilePicture = convertS3UrlToCDN(user.profilePicture);
+    }
     const userResponse = user.toObject();
     userResponse.friendCount = user.friends.length;
     userResponse.postCount = user.posts.length;
@@ -424,7 +428,7 @@ const getUserById = asyncHandler(async (req, res) => {
 const updateUserById = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
-    const newProfilePicture = req.file ? req.file.location : null; // ✅ AWS S3 image URL
+    const newProfilePicture = req.file ? convertS3UrlToCDN(req.file.location) : null;  // ✅ AWS S3 image URL
 
     if (!req.user || !req.user._id) {
         return res.status(401).json({ error: 'Unauthorized: No valid token' });
@@ -497,7 +501,7 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
         let imageUrl = null;
 
         if (req.file) {
-            imageUrl = req.file.location; // S3 URL of the uploaded file
+            imageUrl = convertS3UrlToCDN(req.file.location); // S3 URL of the uploaded file
         }
 
         const updateData = {

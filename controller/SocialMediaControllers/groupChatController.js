@@ -5,50 +5,60 @@ const { getIo } = require('../../websocket/socket');
 const { s3Client, DeleteObjectCommand } = require('../../config/s3Config');
 const { successResponse, errorResponse } = require('../../utils/apiResponse');
 const JainAadhar = require('../../model/UserRegistrationModels/jainAadharModel')
+const { convertS3UrlToCDN } = require('../../utils/s3Utils');
 
 // 1. Create Group Chat
 exports.createGroupChat = async (req, res) => {
   try {
-    let { groupName, groupMembers,creator } = req.body;
-    const DEFAULT_GROUP_IMAGE = "https://jainprabhutmanch-bucket.s3.ap-south-1.amazonaws.com/groupchaticon/JainGorupChatDefaultImage.png";
-    let groupImage = req.file ? req.file.location : DEFAULT_GROUP_IMAGE;
+    let { groupName, groupMembers, creator } = req.body;
+
+    // Directly use uploaded image if available, else set it to undefined
+    let groupImage = req.file ? req.file.location : undefined;
+
     console.log("Uploaded file:", groupImage);
+    if (groupImage) {
+      groupImage = convertS3UrlToCDN(groupImage);
+    }
     if (!groupName) groupName = "New Group";
+
     if (!groupMembers || !Array.isArray(groupMembers) || groupMembers.length === 0) {
       return res.status(400).json({ message: "At least one group member is required." });
     }
+
     // Ensure creator is included in group members
     if (!groupMembers.includes(creator)) {
       groupMembers.push(creator);
     }
+
     const newGroup = new GroupChat({
       groupName,
       groupMembers: groupMembers.map(memberId => ({
         user: memberId,
         role: memberId === creator ? 'admin' : 'member'
       })),
-      groupImage,
+      groupImage, // This can now be undefined if frontend doesn't send an image
       creator,
       admins: [creator]
     });
+
     await newGroup.save();
-     // Prepare a simplified group object for socket emission
-     const groupForSocket = {
+
+    // Prepare a simplified group object for socket emission
+    const groupForSocket = {
       _id: newGroup._id,
       groupName: newGroup.groupName,
       groupImage: newGroup.groupImage,
       creator: newGroup.creator,
       createdAt: newGroup.createdAt
     };
-    // Notify all group members
+
+    // Notify all group members via Socket.io
     const io = getIo();
     if (io) {
       console.log(`Notifying ${groupMembers.length} members about new group ${newGroup._id}`);
       groupMembers.forEach(memberId => {
-        // Emit to each member's personal room
         io.to(memberId.toString()).emit('newGroup', groupForSocket);
         console.log(`Emitted newGroup event to user ${memberId}`);
-        // Also emit addedToGroup event for better client handling
         io.to(memberId.toString()).emit('addedToGroup', {
           groupId: newGroup._id,
           groupName: newGroup.groupName
@@ -57,6 +67,7 @@ exports.createGroupChat = async (req, res) => {
     } else {
       console.error('Socket.io instance not available');
     }
+
     return successResponse(res, newGroup, "Group created successfully", 201);
   } catch (error) {
     console.error(error);
@@ -70,18 +81,28 @@ exports.getGroupDetails = async (req, res) => {
     if (!groupId) {
       return res.status(400).json({ message: "Group ID is required." });
     }
+
     const group = await GroupChat.findById(groupId)
       .populate("groupMembers.user", "firstName lastName profilePicture")
       .populate('creator', 'firstName lastName profilePicture')
-      .populate('admins', 'firstName lastName profilePicture');    if (!group) {
+      .populate('admins', 'firstName lastName profilePicture');
+
+    if (!group) {
       return res.status(404).json({ message: "Group not found." });
     }
+
+    // ✅ Convert groupImage URL to CDN if it exists
+    if (group.groupImage) {
+      group.groupImage = convertS3UrlToCDN(group.groupImage);
+    }
+
     res.status(200).json({ group });
   } catch (error) {
     console.error("Error fetching group details:", error);
     res.status(500).json({ error: error.message });
   }
 };
+
 
 //  Create or Find Gotra Group Automatically
 exports.createOrFindGotraGroup = async (req, res) => {
@@ -166,12 +187,21 @@ exports.createOrFindGotraGroup = async (req, res) => {
 exports.getAllGroups = async (req, res) => {
   try {
     const userId = req.user._id;
+
     const groups = await GroupChat.find({
       'groupMembers.user': userId,
       isGotraGroup: false
     })
     .populate('groupMembers.user', 'firstName lastName profilePicture')
     .populate('creator', 'firstName lastName profilePicture');
+
+    // Convert groupImage URL to CDN if it exists in each group
+    groups.forEach(group => {
+      if (group.groupImage) {
+        group.groupImage = convertS3UrlToCDN(group.groupImage);
+      }
+    });
+
     res.status(200).json({ groups });
   } catch (error) {
     console.error(error);
@@ -257,7 +287,7 @@ exports.sendGroupMessage = async (req, res) => {
       message: message || 'Image',
       attachments: req.file ? [{
         type: 'image',
-        url: req.file.location,
+        url: convertS3UrlToCDN(req.file.location),
         name: req.file.originalname,
         size: req.file.size
       }] : [],
@@ -346,7 +376,6 @@ exports.getGroupMessages = async (req, res) => {
       return errorResponse(res, "Group not found", 404);
     }
 
-    // ✅ **Check if user is a group member**
     const isMember = group.groupMembers.some(
       member => member.user.toString() === userId.toString()
     );
@@ -354,15 +383,23 @@ exports.getGroupMessages = async (req, res) => {
     if (!isMember) {
       return errorResponse(res, "Not authorized to view messages", 403);
     }
-    const decryptedMessages = group.groupMessages.map(msg =>
-      msg.toObject({ getters: true }) // this will auto-decrypt
-    );
-    
 
-    await group.save();
+    const decryptedMessages = group.groupMessages.map(msg => {
+      const plain = msg.toObject({ getters: true });
+
+      // ✅ CDN URL conversion for each attachment
+      if (plain.attachments && plain.attachments.length > 0) {
+        plain.attachments = plain.attachments.map(att => ({
+          ...att,
+          url: convertS3UrlToCDN(att.url)
+        }));
+      }
+
+      return plain;
+    });
 
     return successResponse(res, {
-      messages: decryptedMessages, // ✅ **Decrypted messages send karein**
+      messages: decryptedMessages,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -374,6 +411,7 @@ exports.getGroupMessages = async (req, res) => {
     return errorResponse(res, error.message, 500);
   }
 };
+
 
 
 // 5. Delete Group Message
@@ -511,7 +549,7 @@ exports.updateGroupDetails = async (req, res) => {
         }
       }
       // ✅ Save New Image
-      group.groupImage = req.file.location;
+      group.groupImage = convertS3UrlToCDN(req.file.location);
     }
     await group.save();
     // Notify group members about the update
